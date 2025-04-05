@@ -1,0 +1,6 @@
+openai
+python-dotenv
+feedparser
+twilio
+beautifulsoup4
+requests
