@@ -2,11 +2,14 @@ from openai import OpenAI
 import requests
 import os
 import feedparser
+from dotenv import load_dotenv
 from datetime import datetime, timezone
 from bs4 import BeautifulSoup
 from datetime import timedelta
 from twilio.rest import Client
 import requests
+import hashlib
+load_dotenv()
 import re
 from urllib.parse import quote
 
@@ -22,16 +25,19 @@ RSS_FEEDS = {
     "Reuters (Tech)": "https://www.reutersagency.com/feed/?best-sectors=technology",
 }
 
+
 def shorten_url(url):
     try:
+        # Shorten the URL using TinyURL
         response = requests.get(f"https://tinyurl.com/api-create.php?url={url}")
         if response.status_code == 200:
-            return response.text
+            # Append '?' to prevent WhatsApp preview
+            return response.text + "?"
         else:
-            return url  # fallback to original if failed
+            return url  # Fallback to original URL if TinyURL fails
     except Exception as e:
         print(f"Error shortening URL: {e}")
-        return url
+        return url  # Return original URL if there was an error
 
 def strip_html(text):
     return BeautifulSoup(text, "html.parser").get_text()
@@ -76,7 +82,7 @@ def summarize_crypto_news(raw_news: str, model="gpt-4"):
         "regulatory developments, company activity (e.g., acquisitions, partnerships, launches), or technology updates "
         "in the digital asset space.\n\n"
         "Format: For each selected news item, provide:\n"
-        "- A short headline-style summary (2–4 words), followed by\n"
+        "- A short headline-style summary (2–4 words), wrapped in asterisks to make it *bold*, followed by\n"
         "- A one to two line description\n"
         "- At the end of the line, include the source and the publication date in this format: (Cointelegraph, 06 Apr 2025)\n"
         "- On the next line, include the full URL to the article (no brackets)\n"
@@ -111,7 +117,7 @@ def send_whatsapp_message(body, to_number):
 
     print(f"Message sent! SID: {message.sid}")
 
-
+print(f"OpenAI key loaded: {OPENAI_API_KEY[:8]}...")
 news = fetch_crypto_news()
 print (news)
 summary = summarize_crypto_news(news)
