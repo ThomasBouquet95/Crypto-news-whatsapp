@@ -10,6 +10,7 @@ from twilio.rest import Client
 import hashlib
 import logging
 import gspread
+import uuid
 from oauth2client.service_account import ServiceAccountCredentials
 
 # --- Setup Logging ---
@@ -125,23 +126,23 @@ def fetch_crypto_news():
 # --- Summarize News with OpenAI ---
 def summarize_crypto_news(raw_news: str, model="gpt-4"):
     logging.info("\ud83e\udd16 Summarizing news with GPT-4...")
+
     prompt = (
         "Context: I work at Sygnum, a regulated crypto bank serving corporate, institutional, "
         "and private clients with services including custody, brokerage, lending, and tokenization. "
         "I'm currently based in the Singapore office.\n\n"
-        "Task: Based on the crypto news listed below, identify 0 to 3 key stories that are genuinely significant. "
-        "These should relate to major regulatory developments, important company activity (such as acquisitions, partnerships, launches), "
-        "or notable technology updates in the digital asset space. "
-        "If none of the stories stand out as impactful, you may return nothing.\n\n"
+        "Task: Based on the crypto news listed below, please identify 1 to 4 key stories that are relevant to "
+        "regulatory developments, company activity (e.g., acquisitions, partnerships, launches), or technology updates "
+        "in the digital asset space.\n\n"
         "Format: For each selected news item, provide:\n"
-        "- A short headline-style summary (1–3 words), wrapped in asterisks to make it *bold*, followed by\n"
+        "- A short headline-style summary (2–4 words), followed by\n"
         "- A one to two line description\n"
         "- At the end of the line, include the source and the publication date in this format: (Cointelegraph, 06 Apr 2025)\n"
         "- On the next line, include the full URL to the article (no brackets)\n"
         "- Do not use 'Source:' or 'Date:' labels — just format exactly as shown\n"
         "- Separate each item with a blank line\n\n"
         "Example:\n"
-        "*Stablecoin Guidelines Drafted*: The SEC released a new proposal for stablecoin oversight. (CoinDesk, 06 Apr 2025)\n"
+        "Stablecoin Guidelines Drafted: The SEC released a new proposal for stablecoin oversight. (CoinDesk, 06 Apr 2025)\n"
         "Link: https://example.com/article\n\n"
         f"News:\n{raw_news}"
     )
@@ -151,7 +152,11 @@ def summarize_crypto_news(raw_news: str, model="gpt-4"):
         messages=[{"role": "user", "content": prompt}]
     )
 
-    return response.choices[0].message.content
+    result = response.choices[0].message.content
+
+    # Add "🚀 Crypto updates:" to the beginning of the result after it is generated
+    result = "🚀 Crypto updates:\n\n" + result
+    return result
 
 # --- Filter Summary for Unsent Links ---
 def extract_links_and_blocks(summary_text):
@@ -170,7 +175,10 @@ def filter_unsent_blocks(summary_text):
     blocks_to_send = []
 
     for url, block in extract_links_and_blocks(summary_text):
-        hash_val = compute_hash_from_url(url)
+        # 👇 Hash the original (unshortened) URL
+        original_url = url.split("?")[0] if "tinyurl.com" in url else url
+        hash_val = compute_hash_from_url(original_url)
+
         if hash_val not in seen_hashes:
             blocks_to_send.append(block)
             new_hashes.add(hash_val)
@@ -178,7 +186,7 @@ def filter_unsent_blocks(summary_text):
     if new_hashes:
         save_sent_hashes(new_hashes)
     else:
-        logging.info("\u2139\ufe0f No new blocks to send (all URLs were already seen).")
+        logging.info("ℹ️ No new blocks to send (all URLs were already seen).")
 
     return "\n\n".join(blocks_to_send)
 
@@ -201,6 +209,7 @@ if __name__ == "__main__":
     logging.info("\ud83d\udcc4 Raw news fetched.")
 
     summary = summarize_crypto_news(news)
+    logging.info("🧠 GPT-4 Summary:\n" + summary)
     filtered_summary = filter_unsent_blocks(summary)
 
     if filtered_summary:
