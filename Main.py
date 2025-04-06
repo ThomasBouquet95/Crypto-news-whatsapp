@@ -123,6 +123,11 @@ def fetch_crypto_news():
     logging.info(f"\ud83d\udcf0 Fetched {len(news_items)} news items in the last 24h.")
     return "\n".join(news_items) if news_items else "No news found in the last 24 hours."
 
+# --- Add Header to the Summary ---
+def add_crypto_update_header(summary):
+    # Add the "Crypto updates" header at the beginning
+    return "🚀 Crypto updates:\n\n" + summary
+
 # --- Summarize News with OpenAI ---
 def summarize_crypto_news(raw_news: str, model="gpt-4"):
     logging.info("\ud83e\udd16 Summarizing news with GPT-4...")
@@ -153,9 +158,6 @@ def summarize_crypto_news(raw_news: str, model="gpt-4"):
     )
 
     result = response.choices[0].message.content
-
-    # Add "🚀 Crypto updates:" to the beginning of the result after it is generated
-    result = "🚀 Crypto updates:\n\n" + result
     return result
 
 # --- Filter Summary for Unsent Links ---
@@ -213,8 +215,9 @@ if __name__ == "__main__":
     filtered_summary = filter_unsent_blocks(summary)
 
     if filtered_summary:
-        send_whatsapp_message(filtered_summary, WHATSAPP_TO)
+        summary_with_header = add_crypto_update_header(filtered_summary)
+        send_whatsapp_message(summary_with_header, WHATSAPP_TO)
         logging.info("\u2705 New summary sent.")
-        logging.info("\n" + filtered_summary)
+        logging.info("\n" + summary_with_header)
     else:
         logging.info("\u23f8 No new articles to send.")
