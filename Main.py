@@ -43,11 +43,11 @@ def get_google_credentials():
     ]
     env_creds = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
     if env_creds:
-        logging.info("🔐 Using credentials from environment variable")
+        logging.info("\ud83d\udd10 Using credentials from environment variable")
         creds_dict = json.loads(env_creds)
         return ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     else:
-        logging.info("📁 Using local service_account.json file")
+        logging.info("\ud83d\udcc1 Using local service_account.json file")
         return ServiceAccountCredentials.from_json_keyfile_name("service_account.json", scope)
 
 # --- Google Sheets Access ---
@@ -68,7 +68,7 @@ def save_sent_hashes(hashes):
     now = datetime.now(timezone.utc).isoformat()
     rows = [[h, now] for h in hashes]
     sheet.append_rows(rows)
-    logging.info(f"✅ Saved {len(hashes)} hashes to Google Sheet")
+    logging.info(f"\u2705 Saved {len(hashes)} hashes to Google Sheet")
 
 # --- Compute URL Hash ---
 def compute_hash_from_url(url):
@@ -96,9 +96,9 @@ def fetch_crypto_news():
     cutoff = now - timedelta(hours=24)
     news_items = []
 
-    logging.info("📡 Fetching crypto news...")
+    logging.info("\ud83d\udcf1 Fetching crypto news...")
     for source, url in RSS_FEEDS.items():
-        logging.info(f"🌐 Parsing feed from: {source}")
+        logging.info(f"\ud83c\udf10 Parsing feed from: {source}")
         feed = feedparser.parse(url)
         for entry in feed.entries:
             pub_datetime = None
@@ -119,12 +119,12 @@ def fetch_crypto_news():
             formatted_news = f"[{title}]: {summary} ({source}, {date_str})\nLink: {short_link}"
             news_items.append(formatted_news)
 
-    logging.info(f"📰 Fetched {len(news_items)} news items in the last 24h.")
+    logging.info(f"\ud83d\udcf0 Fetched {len(news_items)} news items in the last 24h.")
     return "\n".join(news_items) if news_items else "No news found in the last 24 hours."
 
 # --- Summarize News with OpenAI ---
 def summarize_crypto_news(raw_news: str, model="gpt-4"):
-    logging.info("🤖 Summarizing news with GPT-4...")
+    logging.info("\ud83e\udd16 Summarizing news with GPT-4...")
     prompt = (
         "Context: I work at Sygnum, a regulated crypto bank serving corporate, institutional, "
         "and private clients with services including custody, brokerage, lending, and tokenization. "
@@ -178,7 +178,7 @@ def filter_unsent_blocks(summary_text):
     if new_hashes:
         save_sent_hashes(new_hashes)
     else:
-        logging.info("ℹ️ No new blocks to send (all URLs were already seen).")
+        logging.info("\u2139\ufe0f No new blocks to send (all URLs were already seen).")
 
     return "\n\n".join(blocks_to_send)
 
@@ -190,22 +190,22 @@ def send_whatsapp_message(body, to_number):
         body=body,
         to=f'whatsapp:{to_number}'
     )
-    logging.info(f"📤 WhatsApp message sent (SID: {message.sid})")
+    logging.info(f"\ud83d\udce4 WhatsApp message sent (SID: {message.sid})")
 
 # --- Main Execution ---
 if __name__ == "__main__":
-    logging.info("🚀 Starting Crypto News Summary Bot")
-    logging.info("🔐 OpenAI key loaded: " + OPENAI_API_KEY[:8] + "...")
+    logging.info("\ud83d\ude80 Starting Crypto News Summary Bot")
+    logging.info("\ud83d\udd10 OpenAI key loaded: " + OPENAI_API_KEY[:8] + "...")
 
     news = fetch_crypto_news()
-    logging.info("📄 Raw news fetched.")
+    logging.info("\ud83d\udcc4 Raw news fetched.")
 
     summary = summarize_crypto_news(news)
     filtered_summary = filter_unsent_blocks(summary)
 
     if filtered_summary:
         send_whatsapp_message(filtered_summary, WHATSAPP_TO)
-        logging.info("✅ New summary sent.")
+        logging.info("\u2705 New summary sent.")
         logging.info("\n" + filtered_summary)
     else:
-        logging.info("⏸ No new articles to send.")
+        logging.info("\u23f8 No new articles to send.")
