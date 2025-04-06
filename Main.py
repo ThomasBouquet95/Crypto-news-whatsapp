@@ -1,4 +1,5 @@
 from openai import OpenAI
+import json
 import os
 import requests
 import feedparser
@@ -8,6 +9,8 @@ from bs4 import BeautifulSoup
 from twilio.rest import Client
 import hashlib
 import logging
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
 # --- Setup Logging ---
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -32,64 +35,68 @@ RSS_FEEDS = {
     "Reuters (Tech)": "https://www.reutersagency.com/feed/?best-sectors=technology",
 }
 
-# --- File to track previously sent articles ---
-SENT_NEWS_FILE = "sent_news.txt"
+# --- Google Sheets Credential Loader (hybrid) ---
+def get_google_credentials():
+    scope = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    env_creds = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
+    if env_creds:
+        logging.info("🔐 Using credentials from environment variable")
+        creds_dict = json.loads(env_creds)
+        return ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    else:
+        logging.info("📁 Using local service_account.json file")
+        return ServiceAccountCredentials.from_json_keyfile_name("service_account.json", scope)
 
-# --- Utility functions for tracking sent news ---
+# --- Google Sheets Access ---
+def get_google_sheet():
+    creds = get_google_credentials()
+    client = gspread.authorize(creds)
+    sheet = client.open("Crypto News Sent Hashes").worksheet("Hashes")
+    return sheet
 
+# --- Tracking Sent News ---
 def load_sent_hashes():
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=48)
-    valid_hashes = set()
-    all_entries = []
-
-    if not os.path.exists(SENT_NEWS_FILE):
-        return valid_hashes
-
-    with open(SENT_NEWS_FILE, 'r') as f:
-        for line in f:
-            parts = line.strip().split("|")
-            if len(parts) != 2:
-                continue  # malformed line
-            hash_val, timestamp = parts
-            try:
-                ts = datetime.fromisoformat(timestamp)
-                if ts > cutoff:
-                    valid_hashes.add(hash_val)
-                    all_entries.append((hash_val, timestamp))
-            except Exception as e:
-                logging.warning(f"⚠️ Skipping malformed timestamp: {timestamp}")
-
-    # Rewrite the file with only valid entries
-    with open(SENT_NEWS_FILE, "w") as f:
-        for h, t in all_entries:
-            f.write(f"{h}|{t}\n")
-
-    logging.info(f"🧹 Retained {len(valid_hashes)} recent hashes (<= 48h)")
-    return valid_hashes
+    sheet = get_google_sheet()
+    records = sheet.get_all_records()
+    return set(row["hash"] for row in records)
 
 def save_sent_hashes(hashes):
+    sheet = get_google_sheet()
     now = datetime.now(timezone.utc).isoformat()
-    with open(SENT_NEWS_FILE, 'a') as f:
-        for h in hashes:
-            f.write(f"{h}|{now}\n")
-    logging.info(f"✅ Saved {len(hashes)} new hashes to {SENT_NEWS_FILE}")
+    rows = [[h, now] for h in hashes]
+    sheet.append_rows(rows)
+    logging.info(f"✅ Saved {len(hashes)} hashes to Google Sheet")
 
-
+# --- Compute URL Hash ---
 def compute_hash_from_url(url):
     return hashlib.sha256(url.encode("utf-8")).hexdigest()
 
-# --- RSS news fetcher ---
+# --- Shorten URLs using TinyURL ---
+def shorten_url(url):
+    try:
+        response = requests.get(f"https://tinyurl.com/api-create.php?url={url}")
+        if response.status_code == 200:
+            return response.text
+        else:
+            return url
+    except Exception as e:
+        logging.warning(f"Failed to shorten URL: {e}")
+        return url
 
+# --- Strip HTML from summaries ---
 def strip_html(text):
     return BeautifulSoup(text, "html.parser").get_text()
 
+# --- Fetch Crypto News ---
 def fetch_crypto_news():
     now = datetime.now(timezone.utc)
     cutoff = now - timedelta(hours=24)
     news_items = []
 
     logging.info("📡 Fetching crypto news...")
-
     for source, url in RSS_FEEDS.items():
         logging.info(f"🌐 Parsing feed from: {source}")
         feed = feedparser.parse(url)
@@ -107,15 +114,15 @@ def fetch_crypto_news():
             summary = strip_html(entry.summary)[:300].strip().replace("\n", " ") if hasattr(entry, 'summary') else ""
             date_str = pub_datetime.strftime("%Y-%m-%d %H:%M")
             link = entry.link.strip() if hasattr(entry, 'link') else ""
+            short_link = shorten_url(link)
 
-            formatted_news = f"[{title}]: {summary} ({source}, {date_str})\nLink: {link}"
+            formatted_news = f"[{title}]: {summary} ({source}, {date_str})\nLink: {short_link}"
             news_items.append(formatted_news)
 
     logging.info(f"📰 Fetched {len(news_items)} news items in the last 24h.")
     return "\n".join(news_items) if news_items else "No news found in the last 24 hours."
 
-# --- GPT-4 summarizer ---
-
+# --- Summarize News with OpenAI ---
 def summarize_crypto_news(raw_news: str, model="gpt-4"):
     logging.info("🤖 Summarizing news with GPT-4...")
     prompt = (
@@ -146,12 +153,10 @@ def summarize_crypto_news(raw_news: str, model="gpt-4"):
 
     return response.choices[0].message.content
 
-# --- GPT Output filtering based on previously sent URLs ---
-
+# --- Filter Summary for Unsent Links ---
 def extract_links_and_blocks(summary_text):
     summary_blocks = summary_text.strip().split("\n\n")
     results = []
-
     for block in summary_blocks:
         lines = block.strip().splitlines()
         if len(lines) >= 2 and lines[1].startswith("Link: "):
@@ -177,23 +182,21 @@ def filter_unsent_blocks(summary_text):
 
     return "\n\n".join(blocks_to_send)
 
-# --- WhatsApp sender (via Twilio) ---
-
+# --- Send WhatsApp via Twilio ---
 def send_whatsapp_message(body, to_number):
     client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
     message = client.messages.create(
-        from_='whatsapp:+14155238886',  # Twilio Sandbox number
+        from_='whatsapp:+14155238886',
         body=body,
         to=f'whatsapp:{to_number}'
     )
     logging.info(f"📤 WhatsApp message sent (SID: {message.sid})")
 
-# --- Main execution flow ---
-
+# --- Main Execution ---
 if __name__ == "__main__":
     logging.info("🚀 Starting Crypto News Summary Bot")
-
     logging.info("🔐 OpenAI key loaded: " + OPENAI_API_KEY[:8] + "...")
+
     news = fetch_crypto_news()
     logging.info("📄 Raw news fetched.")
 
