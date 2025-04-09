@@ -129,9 +129,7 @@ def fetch_crypto_news():
 def summarize_crypto_news(raw_news: str, model="gpt-4"):
     logging.info("🤖 Summarizing news with GPT-4...")
     prompt = (
-        "Context: I work at Sygnum, a regulated crypto bank serving corporate, institutional, "
-        "and private clients with services including custody, brokerage, lending, and tokenization. "
-        "I'm currently based in the Singapore office.\n\n"
+        "You are a crypto news assistant for a regulated digital asset bank.\n\n"
         "Task: Based on the crypto news listed below, please identify 1 to 3 key stories that are relevant to "
         "regulatory developments, company activity (e.g., acquisitions, partnerships, launches), or technology updates "
         "in the digital asset space.\n\n"
@@ -143,6 +141,9 @@ def summarize_crypto_news(raw_news: str, model="gpt-4"):
         "- Do NOT number the items. Do not add '1.', '2.', etc.\n"
         "- Do not use 'Source:' or 'Date:' labels — just format exactly as shown\n"
         "- Separate each item with a blank line\n\n"
+        "Example output:\n"
+        "**Thailand Updates Crypto Regulations for Foreign P2P Services**: Amendments to several national laws have been approved by Thailand's cabinet to strengthen measures against online crimes involving digital assets, targeting foreign crypto P2P services (Cointelegraph, 09 Apr 2025)\n"
+        "https://tinyurl.com/283eqxsg\n\n"
         f"News:\n{raw_news}"
     )
 
