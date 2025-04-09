@@ -140,6 +140,7 @@ def summarize_crypto_news(raw_news: str, model="gpt-4"):
         "- A one to two line description\n"
         "- At the end of the line, include the source and the publication date in this format: (Cointelegraph, 06 Apr 2025)\n"
         "- On the next line, include the full URL to the article (no brackets)\n"
+        "- Do NOT number the items. Do not add '1.', '2.', etc.\n"
         "- Do not use 'Source:' or 'Date:' labels — just format exactly as shown\n"
         "- Separate each item with a blank line\n\n"
         f"News:\n{raw_news}"
