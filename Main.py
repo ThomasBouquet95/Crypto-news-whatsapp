@@ -130,7 +130,7 @@ def summarize_crypto_news(raw_news: str, model="gpt-4"):
     logging.info("🤖 Summarizing news with GPT-4...")
     prompt = (
         "You are a crypto news assistant for a regulated digital asset bank.\n\n"
-        "Task: Based on the crypto news listed below, please identify 1 to 3 key stories that are relevant to "
+        "Task: Based on the crypto news listed below, please identify 1 to 2 key stories that are relevant to "
         "regulatory developments, company activity (e.g., acquisitions, partnerships, launches), or technology updates "
         "in the digital asset space.\n\n"
         "Format: For each selected news item, provide:\n"
