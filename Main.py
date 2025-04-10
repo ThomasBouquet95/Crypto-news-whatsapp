@@ -134,15 +134,14 @@ def summarize_crypto_news(raw_news: str, model="gpt-4"):
         "regulatory developments, company activity (e.g., acquisitions, partnerships, launches), or technology updates "
         "in the digital asset space.\n\n"
         "Format: For each selected news item, provide:\n"
-        "- A short headline-style summary (2–4 words), followed by\n"
-        "- A one to two line description\n"
+        "- A one-line summary\n"
         "- At the end of the line, include the source and the publication date in this format: (Cointelegraph, 06 Apr 2025)\n"
         "- On the next line, include the full URL to the article (no brackets)\n"
         "- Do NOT number the items. Do not add '1.', '2.', etc.\n"
-        "- Do not use 'Source:' or 'Date:' labels — just format exactly as shown\n"
+        "- Do not add a headline, title, or bold text\n"
         "- Separate each item with a blank line\n\n"
         "Example output:\n"
-        "**Thailand Updates Crypto Regulations for Foreign P2P Services**: Amendments to several national laws have been approved by Thailand's cabinet to strengthen measures against online crimes involving digital assets, targeting foreign crypto P2P services (Cointelegraph, 09 Apr 2025)\n"
+        "Amendments to several national laws have been approved by Thailand's cabinet to strengthen measures against online crimes involving digital assets, targeting foreign crypto P2P services (Cointelegraph, 09 Apr 2025)\n"
         "https://tinyurl.com/283eqxsg\n\n"
         f"News:\n{raw_news}"
     )
@@ -222,35 +221,28 @@ def parse_block_to_variables(block):
         logging.warning(f"❌ Block skipped due to insufficient lines:\n{block}")
         return None
 
-    title = lines[0].strip().strip('"')
-    summary = "No summary provided"
-    source = "Unknown"
-    date = datetime.now().strftime("%d %b %Y")
-    url = ""
+    line = lines[0].strip()
+    url = lines[1].strip()
 
-    # Try to extract summary + (Source, Date) from line 2
-    match = re.match(r"(.+?)\s+\((.+?),\s+([^)]+)\)", lines[1])
+    # Try to extract summary, source, and date
+    match = re.match(r"(.+?)\s+\((.+?),\s+([^)]+)\)", line)
     if match:
-        summary = match.group(1).strip().lstrip("-").strip()
+        summary = match.group(1).strip().rstrip(".")
         source = match.group(2).strip()
         date = match.group(3).strip()
     else:
-        logging.warning(f"⚠️ Could not parse source/date from line:\n{lines[1]}")
-
-    # Look for a URL in any line
-    for line in lines:
-        url_match = re.search(r'https?://\S+', line)
-        if url_match:
-            url = url_match.group(0).strip(")")
-            break
+        logging.warning(f"⚠️ Could not parse source/date from line:\n{line}")
+        summary = line
+        source = "Unknown"
+        date = datetime.now().strftime("%d %b %Y")
 
     return {
-        "1": title,
-        "2": summary,
-        "3": source,
-        "4": date,
-        "5": url
+        "1": summary,
+        "2": source,
+        "3": date,
+        "4": url
     }
+
 
 def sanitize_content(value):
     return value.encode("ascii", "ignore").decode("ascii").strip()
@@ -322,17 +314,21 @@ if __name__ == "__main__":
             vars = parse_block_to_variables(block)
             if vars:
                 logging.info(f"🚀 Sending with content_variables: {json.dumps(vars)}")
-                vars = {k: sanitize_content(v) for k, v in vars.items()}
+                vars = {
+                    k: sanitize_content(v) if k != "4" else v.strip()
+                    for k, v in vars.items()
+                }
 
-                expected_keys = {"1", "2", "3", "4", "5"}
+                expected_keys = {"1", "2", "3", "4"}
                 if set(vars.keys()) != expected_keys:
                     logging.error(f"⚠️ Unexpected or missing content variable keys: {vars.keys()}")
+
 
                 try:
                     chat_ids = get_all_telegram_chat_ids()
                     message = (
-                        f"🚨*{vars['1']}*: {vars['2']} ({vars['3']}, {vars['4']})\n"
-                        f"🔗 Source: {vars['5']}"
+                        f"🚨{vars['1']} ({vars['2']}, {vars['3']})\n"
+                        f"🔗 Source: {vars['4']}"
                     )
                     logging.info(f"✅ Sent message for: Title: {vars['1']}")
                     for cid in chat_ids:
