@@ -100,6 +100,34 @@ def clean_old_articles_from_sheet(hours=12):
 
     logging.info(f"🧹 Cleaned sheet: kept {len(values)} rows from the last {hours} hours.")
 
+def get_subscriber_sheet():
+    creds = get_google_credentials()
+    client = gspread.authorize(creds)
+    return client.open("Crypto News Sent Hashes").worksheet("Subscribers")
+
+def save_chat_id_to_sheet(chat_id):
+    try:
+        sheet = get_subscriber_sheet()
+        existing_ids = sheet.col_values(1)[1:]  # Skip header
+        if str(chat_id) not in existing_ids:
+            sheet.append_row([str(chat_id)])
+            logging.info(f"📥 Stored new subscriber chat_id: {chat_id}")
+        else:
+            logging.debug(f"🔁 chat_id {chat_id} already exists in sheet.")
+    except Exception as e:
+        logging.error("❌ Failed to save chat_id to sheet.")
+        logging.exception(e)
+
+def load_chat_ids_from_sheet():
+    try:
+        sheet = get_subscriber_sheet()
+        chat_ids = [int(id_str) for id_str in sheet.col_values(1)[1:]]  # skip header
+        logging.info(f"✅ Loaded {len(chat_ids)} subscriber chat_ids from sheet.")
+        return chat_ids
+    except Exception as e:
+        logging.error("❌ Failed to load chat_ids from sheet.")
+        logging.exception(e)
+        return []
 
 def load_sent_hashes():
     sheet = get_google_sheet()
@@ -354,7 +382,14 @@ if __name__ == "__main__":
 
 
                 try:
-                    chat_ids = get_all_telegram_chat_ids()
+                    # First: capture and store any newly seen Telegram users
+                    new_ids = get_all_telegram_chat_ids()
+                    for cid in new_ids:
+                        save_chat_id_to_sheet(cid)
+
+                    # Then: load all stored subscribers (including new ones)
+                    chat_ids = load_chat_ids_from_sheet()
+
                     message = (
                         f"🚨{vars['1']} ({vars['2']}, {vars['3']})\n"
                         f"🔗 Source: {vars['4']}"
