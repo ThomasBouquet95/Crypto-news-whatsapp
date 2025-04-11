@@ -69,6 +69,38 @@ def get_google_sheet():
     sheet = client.open("Crypto News Sent Hashes").worksheet("Hashes")
     return sheet
 
+def clean_old_articles_from_sheet(hours=12):
+    sheet = get_google_sheet()
+    records = sheet.get_all_records()
+    now = datetime.now(timezone.utc)
+
+    rows_to_keep = []
+    for i, row in enumerate(records, start=2):  # Start from row 2 (after header)
+        timestamp_str = row.get("timestamp") or row.get("Timestamp")
+        if not timestamp_str:
+            logging.warning(f"⚠️ Missing timestamp in row {i}, skipping.")
+            continue
+
+        try:
+            timestamp = datetime.fromisoformat(timestamp_str)
+        except Exception as e:
+            logging.warning(f"⚠️ Invalid timestamp format in row {i}: {timestamp_str}")
+            continue
+
+        if now - timestamp <= timedelta(hours=hours):
+            rows_to_keep.append(row)
+
+    # Clear the sheet and re-append only valid rows
+    sheet.clear()
+    headers = ["hash", "timestamp", "summary"]
+    sheet.append_row(headers)
+    values = [[row.get("hash", ""), row.get("timestamp", ""), row.get("summary", "")] for row in rows_to_keep]
+    if values:
+        sheet.append_rows(values)
+
+    logging.info(f"🧹 Cleaned sheet: kept {len(values)} rows from the last {hours} hours.")
+
+
 def load_sent_hashes():
     sheet = get_google_sheet()
     records = sheet.get_all_records()
@@ -101,7 +133,7 @@ def strip_html(text):
 # --- News Collection ---
 def fetch_crypto_news():
     now = datetime.now(timezone.utc)
-    cutoff = now - timedelta(hours=24)
+    cutoff = now - timedelta(hours=12)
     news_items = []
 
     for source, url in RSS_FEEDS.items():
@@ -122,26 +154,22 @@ def fetch_crypto_news():
             formatted_news = f"[{title}]: {summary} ({source}, {date_str})\nLink: {short_link}"
             news_items.append(formatted_news)
 
-    logging.info(f"📰 Fetched {len(news_items)} news items in the last 24h.")
-    return "\n".join(news_items) if news_items else "No news found in the last 24 hours."
+    logging.info(f"📰 Fetched {len(news_items)} news items in the last 12h.")
+    return "\n".join(news_items) if news_items else "No news found in the last 12 hours."
 
 # --- Summarization ---
-def summarize_crypto_news(raw_news: str, model="gpt-4"):
-    logging.info("🤖 Summarizing news with GPT-4...")
+def summarize_crypto_news(raw_news: str, model="gpt-3.5-turbo"):
+    logging.info("🤖 Summarizing news with gpt-3.5-turbo...")
     prompt = (
         "You are a crypto news assistant for a regulated digital asset bank.\n\n"
-        "Task: Based on the crypto news listed below, please identify 1 to 2 key stories that are relevant to "
-        "regulatory developments, company activity (e.g., acquisitions, partnerships, launches), or technology updates "
-        "in the digital asset space.\n\n"
-        "Format: For each selected news item, provide:\n"
-        "- A one-line summary\n"
-        "- At the end of the line, include the source and the publication date in this format: (Cointelegraph, 06 Apr 2025)\n"
-        "- On the next line, include the full URL to the article (no brackets)\n"
-        "- Do NOT number the items. Do not add '1.', '2.', etc.\n"
-        "- Do not add a headline, title, or bold text\n"
-        "- Separate each item with a blank line\n\n"
-        "Example output:\n"
-        "Amendments to several national laws have been approved by Thailand's cabinet to strengthen measures against online crimes involving digital assets, targeting foreign crypto P2P services (Cointelegraph, 09 Apr 2025)\n"
+        "From the news below, select 1–2 key stories related to regulation, company moves (e.g. acquisitions, partnerships, launches), or tech developments in the digital asset space.\n\n"
+        "Format each story as:\n"
+        "- One-line summary ending with (Source, DD Mmm YYYY)\n"
+        "- Next line: full article URL (no brackets)\n"
+        "- No numbering, headlines, or bold text\n"
+        "- Separate each item with one blank line\n\n"
+        "Example:\n"
+        "Thailand's cabinet approved amendments to strengthen digital asset crime laws, targeting foreign P2P services (Cointelegraph, 09 Apr 2025)\n"
         "https://tinyurl.com/283eqxsg\n\n"
         f"News:\n{raw_news}"
     )
@@ -152,7 +180,7 @@ def summarize_crypto_news(raw_news: str, model="gpt-4"):
     )
     return response.choices[0].message.content
 
-def deduplicate_with_gpt(past_summaries, candidate_summaries, model="gpt-4"):
+def deduplicate_with_gpt(past_summaries, candidate_summaries, model="gpt-3.5-turbo"):
     """
     Use GPT to check which candidate stories are duplicates of previously sent stories.
     Returns a list of candidate indexes that are considered duplicates (e.g., [1, 2]).
@@ -283,6 +311,7 @@ def send_telegram_message(chat_id: int, text: str):
 
 # --- Main Execution ---
 if __name__ == "__main__":
+    clean_old_articles_from_sheet(hours=12)
     # Step 1: Fetch and summarize news
     news = fetch_crypto_news()
     summary = summarize_crypto_news(news)
