@@ -47,6 +47,13 @@ RSS_FEEDS = {
     "Reuters (Tech)": "https://www.reutersagency.com/feed/?best-sectors=technology",
 }
 
+def is_cointelegraph_market_article(entry):
+    link = getattr(entry, "link", "").lower()
+    return (
+        any(section in link for section in ["/news/", "/business/", "/markets/", "/policy/", "/regulation/", "/tech/"]) and
+        not any(bad in link for bad in ["/explained/", "/learn/", "/what-is-", "/sponsored/", "/opinion/"])
+    )
+
 # --- Google Sheets Credential Loader ---
 def get_google_credentials():
     scope = [
@@ -167,6 +174,10 @@ def fetch_crypto_news():
     for source, url in RSS_FEEDS.items():
         feed = feedparser.parse(url)
         for entry in feed.entries:
+            if source == "Cointelegraph" and not is_cointelegraph_market_article(entry):
+                logging.debug(f"⛔️ Skipped Cointelegraph non-market article: {entry.link}")
+                continue
+
             pub_datetime = getattr(entry, 'published_parsed', None) or getattr(entry, 'updated_parsed', None)
             if not pub_datetime:
                 continue
