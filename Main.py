@@ -76,7 +76,7 @@ def get_google_sheet():
     sheet = client.open("Crypto News Sent Hashes").worksheet("Hashes")
     return sheet
 
-def clean_old_articles_from_sheet(hours=12):
+def clean_old_articles_from_sheet(hours=24):
     sheet = get_google_sheet()
     records = sheet.get_all_records()
     now = datetime.now(timezone.utc)
@@ -168,7 +168,7 @@ def strip_html(text):
 # --- News Collection ---
 def fetch_crypto_news():
     now = datetime.now(timezone.utc)
-    cutoff = now - timedelta(hours=12)
+    cutoff = now - timedelta(hours=24)
     news_items = []
 
     for source, url in RSS_FEEDS.items():
@@ -193,8 +193,8 @@ def fetch_crypto_news():
             formatted_news = f"[{title}]: {summary} ({source}, {date_str})\nLink: {short_link}"
             news_items.append(formatted_news)
 
-    logging.info(f"📰 Fetched {len(news_items)} news items in the last 12h.")
-    return "\n".join(news_items) if news_items else "No news found in the last 12 hours."
+    logging.info(f"📰 Fetched {len(news_items)} news items in the last 24h.")
+    return "\n".join(news_items) if news_items else "No news found in the last 24 hours."
 
 # --- Summarization ---
 def summarize_crypto_news(raw_news: str, model="gpt-3.5-turbo"):
@@ -350,7 +350,7 @@ def send_telegram_message(chat_id: int, text: str):
 
 # --- Main Execution ---
 if __name__ == "__main__":
-    clean_old_articles_from_sheet(hours=12)
+    clean_old_articles_from_sheet(hours=24)
     # Step 1: Fetch and summarize news
     news = fetch_crypto_news()
     summary = summarize_crypto_news(news)
